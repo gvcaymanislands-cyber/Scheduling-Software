@@ -9,7 +9,6 @@ export default function TeamCalendar({ leaves, holidays, employees }) {
   const today = new Date()
   const [year, setYear] = useState(today.getFullYear())
   const [month, setMonth] = useState(today.getMonth())
-  const [tooltip, setTooltip] = useState(null)
 
   const holidaySet = new Set(
     holidays.filter(h => {
@@ -20,7 +19,16 @@ export default function TeamCalendar({ leaves, holidays, employees }) {
   const holidayMap = {}
   holidays.forEach(h => { holidayMap[h.date] = h.name })
 
-  // Build a map: date -> list of leave entries
+  // Birthday map: "MM-DD" -> [employee names]
+  const birthdayMap = {}
+  employees.forEach(e => {
+    if (!e.birthday) return
+    const [bm, bd] = e.birthday.split('-')
+    const key = `${year}-${bm}-${bd}`
+    if (!birthdayMap[key]) birthdayMap[key] = []
+    birthdayMap[key].push(e.name)
+  })
+
   const leaveMap = {}
   leaves.filter(l => l.status === 'approved' || l.status === 'pending').forEach(l => {
     const dates = getDatesInRange(l.startDate, l.endDate)
@@ -84,6 +92,10 @@ export default function TeamCalendar({ leaves, holidays, employees }) {
           <div className="w-2.5 h-2.5 rounded-sm bg-amber-200" />
           Public Holiday
         </div>
+        <div className="flex items-center gap-1.5 text-xs text-stone-600">
+          <span>🎂</span>
+          Birthday
+        </div>
       </div>
 
       {/* Day headers */}
@@ -106,6 +118,7 @@ export default function TeamCalendar({ leaves, holidays, employees }) {
           const isWeekend = i % 7 === 0 || i % 7 === 6
           const isHol = holidaySet.has(dateStr)
           const dayLeaves = leaveMap[dateStr] || []
+          const birthdays = birthdayMap[dateStr] || []
 
           let cls = 'cal-day '
           if (isToday) cls += 'today '
@@ -120,12 +133,17 @@ export default function TeamCalendar({ leaves, holidays, employees }) {
                 }`}>
                   {day}
                 </span>
-                {isHol && (
-                  <span className="text-amber-600 cursor-pointer tooltip">
-                    <Info size={10} />
-                    <span className="tooltip-text">{holidayMap[dateStr]}</span>
-                  </span>
-                )}
+                <div className="flex items-center gap-0.5">
+                  {birthdays.length > 0 && (
+                    <span className="text-xs cursor-pointer tooltip" title={`🎂 ${birthdays.join(', ')}`}>🎂</span>
+                  )}
+                  {isHol && (
+                    <span className="text-amber-600 cursor-pointer tooltip">
+                      <Info size={10} />
+                      <span className="tooltip-text">{holidayMap[dateStr]}</span>
+                    </span>
+                  )}
+                </div>
               </div>
               <div className="space-y-0.5">
                 {dayLeaves.slice(0, 3).map((l, idx) => {
