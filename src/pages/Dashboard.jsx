@@ -6,7 +6,7 @@ import TeamCalendar from '../components/TeamCalendar'
 import LeaveBalance from '../components/LeaveBalance'
 import LeaveRequestModal from '../components/LeaveRequestModal'
 import { LEAVE_TYPES, CAYMAN_HOLIDAYS } from '../utils/leaveUtils'
-import { Plus, Clock, CheckCircle, XCircle, Users, AlertTriangle } from 'lucide-react'
+import { Plus, Clock, CheckCircle, XCircle, Users, AlertTriangle, Cake } from 'lucide-react'
 
 export default function Dashboard() {
   const { currentUser, userProfile, isAdmin } = useAuth()
@@ -14,30 +14,37 @@ export default function Dashboard() {
   const [employees, setEmployees] = useState([])
   const [pendingLeaves, setPendingLeaves] = useState([])
   const [balances, setBalances] = useState({})
+  const [holidays, setHolidays] = useState([])
   const [showRequest, setShowRequest] = useState(false)
   const [loading, setLoading] = useState(true)
 
   const year = new Date().getFullYear()
-  const holidays = [
-    ...(CAYMAN_HOLIDAYS[year] || []),
-    ...(CAYMAN_HOLIDAYS[year + 1] || []),
-  ]
+  const todayStr = new Date().toISOString().slice(0, 10)
 
   useEffect(() => {
-    // Load employees
+    // Load holidays from Firestore (admin-managed), fall back to built-in
+    const hUnsub = onSnapshot(collection(db, 'holidays'), snap => {
+      if (snap.docs.length > 0) {
+        setHolidays(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+      } else {
+        const defaults = [
+          ...(CAYMAN_HOLIDAYS[year] || []),
+          ...(CAYMAN_HOLIDAYS[year + 1] || []),
+        ]
+        setHolidays(defaults.map(h => ({ ...h, id: h.date })))
+      }
+    })
+
     const empUnsub = onSnapshot(
       query(collection(db, 'users'), where('isHidden', '==', false)),
       snap => setEmployees(snap.docs.map(d => ({ id: d.id, ...d.data() })))
     )
 
-    // Load all leaves for current year
     const leavesUnsub = onSnapshot(
       query(collection(db, 'leaves'), where('year', '==', year)),
       snap => {
         const all = snap.docs.map(d => ({ id: d.id, ...d.data() }))
         setLeaves(all)
-
-        // Compute balances for current user
         const myLeaves = all.filter(l => l.userId === currentUser.uid && l.status === 'approved')
         const bal = {}
         myLeaves.forEach(l => {
@@ -45,34 +52,38 @@ export default function Dashboard() {
           bal[l.type].used += l.workingDays || 0
         })
         setBalances(bal)
-
-        // Pending for admin
         if (isAdmin) setPendingLeaves(all.filter(l => l.status === 'pending'))
         setLoading(false)
       }
     )
 
-    return () => { empUnsub(); leavesUnsub() }
+    return () => { hUnsub(); empUnsub(); leavesUnsub() }
   }, [year])
 
   const myUpcoming = leaves
-    .filter(l => l.userId === currentUser.uid && l.status !== 'cancelled' && l.endDate >= new Date().toISOString().slice(0, 10))
+    .filter(l => l.userId === currentUser.uid && l.status !== 'cancelled' && l.endDate >= todayStr)
     .sort((a, b) => a.startDate.localeCompare(b.startDate))
     .slice(0, 3)
 
-  const todayStr = new Date().toISOString().slice(0, 10)
   const whoIsOff = leaves.filter(l =>
-    l.status === 'approved' &&
-    l.startDate <= todayStr &&
-    l.endDate >= todayStr &&
-    l.type !== 'remote'
+    l.status === 'approved' && l.startDate <= todayStr && l.endDate >= todayStr && l.type !== 'remote'
   )
   const whoIsRemote = leaves.filter(l =>
-    l.status === 'approved' &&
-    l.startDate <= todayStr &&
-    l.endDate >= todayStr &&
-    l.type === 'remote'
+    l.status === 'approved' && l.startDate <= todayStr && l.endDate >= todayStr && l.type === 'remote'
   )
+
+  // Birthday reminders — upcoming within 7 days (admin only)
+  const upcomingBirthdays = isAdmin ? employees.filter(e => {
+    if (!e.birthday) return false
+    const today = new Date()
+    const [bMonth, bDay] = e.birthday.split('-').map(Number)
+    for (let i = 0; i <= 7; i++) {
+      const d = new Date(today)
+      d.setDate(d.getDate() + i)
+      if (d.getMonth() + 1 === bMonth && d.getDate() === bDay) return true
+    }
+    return false
+  }) : []
 
   const StatusBadge = ({ status }) => {
     const map = {
@@ -102,7 +113,9 @@ export default function Dashboard() {
           <h1 className="text-2xl font-bold text-stone-800">
             Good {new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 17 ? 'afternoon' : 'evening'}, {userProfile?.name?.split(' ')[0]} 👋
           </h1>
-          <p className="text-stone-500 text-sm mt-0.5">{new Date().toLocaleDateString('en-KY', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+          <p className="text-stone-500 text-sm mt-0.5">
+            {new Date().toLocaleDateString('en-KY', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+          </p>
         </div>
         <button onClick={() => setShowRequest(true)} className="btn-primary">
           <Plus size={16} /> Request Leave
@@ -123,9 +136,38 @@ export default function Dashboard() {
               <p className="text-xs text-amber-600">Review them in the Admin Console</p>
             </div>
           </div>
-          <a href="/admin" className="text-xs font-semibold text-amber-700 hover:text-amber-900 underline">
-            Review now →
-          </a>
+          <a href="/admin" className="text-xs font-semibold text-amber-700 hover:text-amber-900 underline">Review now →</a>
+        </div>
+      )}
+
+      {/* Birthday reminders */}
+      {upcomingBirthdays.length > 0 && (
+        <div className="p-4 rounded-2xl bg-pink-50 border border-pink-200">
+          <div className="flex items-center gap-2 mb-2">
+            <Cake size={16} className="text-pink-500" />
+            <span className="text-sm font-semibold text-pink-700">Upcoming Birthdays</span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {upcomingBirthdays.map(e => {
+              const today = new Date()
+              const [bMonth, bDay] = e.birthday.split('-').map(Number)
+              let daysUntil = null
+              for (let i = 0; i <= 7; i++) {
+                const d = new Date(today)
+                d.setDate(d.getDate() + i)
+                if (d.getMonth() + 1 === bMonth && d.getDate() === bDay) { daysUntil = i; break }
+              }
+              return (
+                <div key={e.id} className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-pink-100 text-pink-700 text-sm">
+                  <span>🎂</span>
+                  <span className="font-semibold">{e.name}</span>
+                  <span className="text-pink-400 text-xs">
+                    {daysUntil === 0 ? 'Today!' : daysUntil === 1 ? 'Tomorrow' : `in ${daysUntil} days`}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
         </div>
       )}
 
@@ -189,16 +231,13 @@ export default function Dashboard() {
             <span className="text-xs font-semibold text-stone-500 uppercase tracking-wide">In Office</span>
           </div>
           <div className="space-y-1">
-            {employees.filter(e => {
-              const isOff = whoIsOff.some(l => l.userId === e.id)
-              const isRem = whoIsRemote.some(l => l.userId === e.id)
-              return !isOff && !isRem
-            }).slice(0, 5).map(e => (
-              <div key={e.id} className="flex items-center gap-2 text-sm">
-                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                <span className="font-medium text-stone-700">{e.name}</span>
-              </div>
-            ))}
+            {employees.filter(e => !whoIsOff.some(l => l.userId === e.id) && !whoIsRemote.some(l => l.userId === e.id))
+              .slice(0, 5).map(e => (
+                <div key={e.id} className="flex items-center gap-2 text-sm">
+                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                  <span className="font-medium text-stone-700">{e.name}</span>
+                </div>
+              ))}
             {employees.filter(e => !whoIsOff.some(l => l.userId === e.id) && !whoIsRemote.some(l => l.userId === e.id)).length === 0 && (
               <p className="text-sm text-stone-400">No one in office today</p>
             )}
@@ -241,7 +280,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Team Calendar */}
+      {/* Team Calendar — now uses Firestore holidays */}
       <div>
         <h2 className="text-sm font-bold text-stone-500 uppercase tracking-wider mb-3">Team Calendar</h2>
         <TeamCalendar leaves={leaves} holidays={holidays} employees={employees} />
@@ -249,9 +288,7 @@ export default function Dashboard() {
 
       {showRequest && (
         <LeaveRequestModal
-          onClose={(submitted) => {
-            setShowRequest(false)
-          }}
+          onClose={() => setShowRequest(false)}
           holidays={holidays}
           leaves={leaves}
           balances={balances}
