@@ -432,20 +432,24 @@ function EmployeesTab({ employees, createEmployee, leaves }) {
 function EditEmployeeModal({ emp, onClose, onSave }) {
   const [form, setForm] = useState({
     name: emp.name || '',
+    email: emp.email || '',
     department: emp.department || '',
     role: emp.role || 'employee',
     isActive: emp.isActive !== false,
     annualAllowance: emp.leaveAllowances?.annual || 20,
     sickAllowance: emp.leaveAllowances?.sick || 10,
+    birthday: emp.birthday || '',
   })
 
   const handleSave = () => {
     onSave(emp.id, {
       name: form.name,
+      email: form.email,
       department: form.department,
       role: form.role,
       isActive: form.isActive,
       leaveAllowances: { annual: Number(form.annualAllowance), sick: Number(form.sickAllowance) },
+      birthday: form.birthday || null,
     })
   }
 
@@ -462,8 +466,25 @@ function EditEmployeeModal({ emp, onClose, onSave }) {
             <input className="input" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
           </div>
           <div>
+            <label className="label">Display Email <span className="normal-case font-normal text-stone-400">(updates profile only — login email unchanged)</span></label>
+            <input type="email" className="input" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} />
+          </div>
+          <div>
             <label className="label">Department</label>
             <input className="input" value={form.department} onChange={e => setForm(f => ({ ...f, department: e.target.value }))} />
+          </div>
+          <div>
+            <label className="label">Birthday <span className="normal-case font-normal text-stone-400">(shows on calendar, reminds admin)</span></label>
+            <input type="date" className="input" value={form.birthday ? `2000-${form.birthday}` : ''} onChange={e => {
+              const val = e.target.value
+              if (val) {
+                const parts = val.split('-')
+                setForm(f => ({ ...f, birthday: `${parts[1]}-${parts[2]}` }))
+              } else {
+                setForm(f => ({ ...f, birthday: '' }))
+              }
+            }} />
+            <p className="text-xs text-stone-400 mt-1">Year is ignored — only month and day are stored</p>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -500,6 +521,7 @@ function EditEmployeeModal({ emp, onClose, onSave }) {
     </div>
   )
 }
+
 
 // ── Holidays Tab ───────────────────────────────────────────────────────────────
 function HolidaysTab({ holidays }) {
