@@ -25,9 +25,19 @@ export default function MyLeaves() {
   const [cancelling, setCancelling] = useState(null)
 
   const year = new Date().getFullYear()
-  const holidays = [...(CAYMAN_HOLIDAYS[year] || []), ...(CAYMAN_HOLIDAYS[year + 1] || [])]
+  const [holidays, setHolidays] = useState([])
 
   useEffect(() => {
+    // Load holidays from Firestore
+    const hUnsub = onSnapshot(collection(db, 'holidays'), snap => {
+      if (snap.docs.length > 0) {
+        setHolidays(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+      } else {
+        const defaults = [...(CAYMAN_HOLIDAYS[year] || []), ...(CAYMAN_HOLIDAYS[year + 1] || [])]
+        setHolidays(defaults.map(h => ({ ...h, id: h.date })))
+      }
+    })
+
     const q = query(
       collection(db, 'leaves'),
       where('userId', '==', currentUser.uid),
@@ -50,7 +60,7 @@ export default function MyLeaves() {
       setBalances(bal)
       setLoading(false)
     })
-    return unsub
+    return () => { hUnsub(); unsub() }
   }, [currentUser.uid, year])
 
   const handleCancel = async (leave) => {
