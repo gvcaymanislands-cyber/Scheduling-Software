@@ -135,8 +135,8 @@ export default function RosterView() {
         r.userId === emp.id &&
         r.weekStart === getWeekStart(dateStr)
       )
-      if (anyRosterForWeek) return { type: 'off', label: 'Not Rostered' }
-      return { type: 'unset', label: 'No Roster' }
+      if (anyRosterForWeek) return { type: 'off', label: 'Day Off' }
+      return { type: 'off', label: 'Day Off' }
     }
   }
 
