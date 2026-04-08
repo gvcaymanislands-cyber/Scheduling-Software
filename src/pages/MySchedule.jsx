@@ -16,10 +16,23 @@ export default function MySchedule() {
 
   const today = new Date().toISOString().slice(0, 10)
   const year = new Date().getFullYear()
-  const holidays = [...(CAYMAN_HOLIDAYS[year] || []), ...(CAYMAN_HOLIDAYS[year + 1] || [])]
-  const holidayDates = holidays.map(h => h.date)
+  const [firestoreHolidays, setFirestoreHolidays] = useState([])
+
+  useEffect(() => {
+    const hUnsub = onSnapshot(collection(db, 'holidays'), snap => {
+      if (snap.docs.length > 0) {
+        setFirestoreHolidays(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+      } else {
+        const defaults = [...(CAYMAN_HOLIDAYS[year] || []), ...(CAYMAN_HOLIDAYS[year + 1] || [])]
+        setFirestoreHolidays(defaults.map(h => ({ ...h, id: h.date })))
+      }
+    })
+    return hUnsub
+  }, [year])
+
+  const holidayDates = firestoreHolidays.map(h => h.date)
   const holidayMap = {}
-  holidays.forEach(h => { holidayMap[h.date] = h.name })
+  firestoreHolidays.forEach(h => { holidayMap[h.date] = h.name })
 
   const savedSchedule = userProfile?.workSchedule || { type: 'fixed', workingDays: [1, 2, 3, 4, 5] }
 
