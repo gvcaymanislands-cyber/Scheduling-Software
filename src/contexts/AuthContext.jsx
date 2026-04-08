@@ -6,15 +6,12 @@ import {
   createUserWithEmailAndPassword,
   getAuth,
 } from 'firebase/auth'
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore'
+import { doc, setDoc, onSnapshot, serverTimestamp } from 'firebase/firestore'
 import { initializeApp, getApps } from 'firebase/app'
 import { auth, db } from '../firebase'
 
 const AuthContext = createContext(null)
 
-// Secondary Firebase app — used ONLY for creating new employees.
-// Keeps the admin signed in on the primary app while creating accounts.
-// getApps() check prevents crash on hot-reload in development.
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
@@ -32,18 +29,30 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (user) => {
+    let profileUnsub = null
+
+    const authUnsub = onAuthStateChanged(auth, (user) => {
       setCurrentUser(user)
+      if (profileUnsub) { profileUnsub(); profileUnsub = null }
+
       if (user) {
-        const snap = await getDoc(doc(db, 'users', user.uid))
-        if (snap.exists()) setUserProfile({ id: snap.id, ...snap.data() })
-        else setUserProfile(null)
+        // Real-time listener — profile updates (schedule, allowances, etc)
+        // reflect immediately without logging out and back in
+        profileUnsub = onSnapshot(doc(db, 'users', user.uid), (snap) => {
+          if (snap.exists()) setUserProfile({ id: snap.id, ...snap.data() })
+          else setUserProfile(null)
+          setLoading(false)
+        })
       } else {
         setUserProfile(null)
+        setLoading(false)
       }
-      setLoading(false)
     })
-    return unsub
+
+    return () => {
+      authUnsub()
+      if (profileUnsub) profileUnsub()
+    }
   }, [])
 
   const login = (email, password) =>
@@ -52,10 +61,7 @@ export function AuthProvider({ children }) {
   const logout = () => signOut(auth)
 
   const createEmployee = async (email, password, profileData) => {
-    // Create on the SECONDARY app — admin stays logged in on primary
     const cred = await createUserWithEmailAndPassword(secondaryAuth, email, password)
-
-    // Write the Firestore profile using the new UID
     const profile = {
       uid: cred.user.uid,
       email,
@@ -68,10 +74,7 @@ export function AuthProvider({ children }) {
       ...profileData,
     }
     await setDoc(doc(db, 'users', cred.user.uid), profile)
-
-    // Sign the secondary app back out immediately — keeps it clean
     await signOut(secondaryAuth)
-
     return cred
   }
 
