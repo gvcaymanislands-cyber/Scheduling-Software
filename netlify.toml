@@ -1,0 +1,12 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "18"
+  NODE_OPTIONS = "--max-old-space-size=1536"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

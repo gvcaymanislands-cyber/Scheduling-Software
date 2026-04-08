@@ -1,0 +1,55 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper: is the user authenticated?
+    function isAuthed() {
+      return request.auth != null;
+    }
+
+    // Helper: is the user an admin?
+    function isAdmin() {
+      return isAuthed() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // Helper: is this the user's own document?
+    function isOwner(uid) {
+      return isAuthed() && request.auth.uid == uid;
+    }
+
+    // Users collection
+    match /users/{userId} {
+      allow read: if isAuthed();
+      allow create: if isAdmin();
+      allow update: if isAdmin() || isOwner(userId);
+      allow delete: if isAdmin();
+    }
+
+    // Leaves collection
+    match /leaves/{leaveId} {
+      allow read: if isAuthed();
+      allow create: if isAuthed() && request.resource.data.userId == request.auth.uid;
+      allow update: if isAdmin() ||
+        (isOwner(resource.data.userId) &&
+         request.resource.data.status == 'cancelled' &&
+         resource.data.status in ['pending', 'approved']);
+      allow delete: if isAdmin();
+    }
+
+    // Holidays collection
+    match /holidays/{holidayId} {
+      allow read: if isAuthed();
+      allow write: if isAdmin();
+    }
+
+    // Weekly rosters — admins can write all, employees can write their own
+    match /weeklyRosters/{rosterId} {
+      allow read: if isAuthed();
+      allow write: if isAdmin() ||
+        (isAuthed() && request.resource.data.userId == request.auth.uid);
+      allow delete: if isAdmin() ||
+        (isAuthed() && resource.data.userId == request.auth.uid);
+    }
+  }
+}
